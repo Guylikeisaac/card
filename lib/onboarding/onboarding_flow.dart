@@ -132,11 +132,10 @@ class _OnboardingFlowState extends State<OnboardingFlow>
     _spin.forward(from: 0);
   }
 
-  /// Always rotates: half turn when the face changes, full turn otherwise.
+  /// Half turn only when the face actually changes; otherwise stay still.
   void _rotateToFace({required bool back, int dir = 1, Duration? d}) {
-    final same = ProfileCard.isBackAngle(_angleTo) == back;
-    _spinTo(_angleTo + dir * (same ? 2 * math.pi : math.pi),
-        d ?? const Duration(milliseconds: 1150));
+    if (ProfileCard.isBackAngle(_angleTo) == back) return;
+    _spinTo(_angleTo + dir * math.pi, d ?? const Duration(milliseconds: 1150));
   }
 
   // ───────────────────────── navigation ─────────────────────────
@@ -229,7 +228,6 @@ class _OnboardingFlowState extends State<OnboardingFlow>
     final ok = await showDigiLockerDialog(context);
     if (ok == true && mounted) {
       data.set(() => data.verified = true);
-      _spinTo(_angleTo + 2 * math.pi, const Duration(milliseconds: 1600));
       widget.onFinished?.call(data);
     }
   }
@@ -563,8 +561,8 @@ class _OnboardingFlowState extends State<OnboardingFlow>
                 scale: popScale,
                 child: ProfileCard(
                   data: data,
-                  angle: _angle + math.cos(f) * 0.06,
-                  tiltX: popTilt + math.sin(f) * 0.035,
+                  angle: _angle + math.cos(f) * 0.02,
+                  tiltX: popTilt + math.sin(f) * 0.015,
                   focus: _focus,
                 ),
               ),
@@ -749,8 +747,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
         return ResumeStep(
           data: d,
           onNext: _next,
-          // Show the freshly parsed details on the back of the card.
-          onParsed: () => _rotateToFace(back: true),
+          onParsed: () {},
         );
       case StepId.location:
         return LocationStep(data: d, onNext: _next);
