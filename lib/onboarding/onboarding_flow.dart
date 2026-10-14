@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -36,8 +37,6 @@ enum StepId {
   gender,
 }
 
-/// Steps whose answers live on the back of the card.
-const _backSteps = {StepId.location, StepId.level, StepId.experience, StepId.notice};
 
 /// Onboarding that starts right after phone + email verification.
 class OnboardingFlow extends StatefulWidget {
@@ -60,7 +59,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
 
   // Card pop-in.
   late final AnimationController _intro = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 1700));
+      vsync: this, duration: const Duration(milliseconds: 2000));
   // Idle float.
   late final AnimationController _float =
       AnimationController(vsync: this, duration: const Duration(seconds: 6))
@@ -69,12 +68,40 @@ class _OnboardingFlowState extends State<OnboardingFlow>
   late final AnimationController _spin = AnimationController(vsync: this);
   double _angleFrom = 0, _angleTo = 0;
 
+  // Spring-driven layout motion: retargetable every frame without restarting,
+  // so the card never jumps when the keyboard or phase changes.
+  final _motion = ValueNotifier<int>(0);
+  late final Ticker _ticker = createTicker(_onTick);
+  Duration _lastTick = Duration.zero;
+  _Spring? _top, _scale, _opacity, _sheet;
+  _Pose? _targetPose;
+  double _sheetTarget = 0;
+
+  void _onTick(Duration elapsed) {
+    final total = ((elapsed - _lastTick).inMicroseconds / 1e6).clamp(0.0, 0.25);
+    _lastTick = elapsed;
+    final t = _targetPose;
+    if (t == null || _top == null) return;
+    // Sub-step so dropped frames keep real-time speed without instability.
+    final n = (total * 240).ceil().clamp(1, 60);
+    final dt = total / n;
+    var moving = false;
+    for (var i = 0; i < n; i++) {
+      moving |= _top!.step(t.top, dt, 4.6, 0.2);
+      moving |= _scale!.step(t.scale, dt, 4.6, 0.0004);
+      moving |= _opacity!.step(t.opacity, dt, 6.5, 0.002);
+      moving |= _sheet!.step(_sheetTarget, dt, 5.2, 0.2);
+    }
+    if (moving) _motion.value++;
+  }
+
   double get _angle =>
       lerpDouble(_angleFrom, _angleTo, Curves.easeInOutCubic.transform(_spin.value))!;
 
   @override
   void initState() {
     super.initState();
+    _ticker.start();
     _after(const Duration(milliseconds: 250), _intro.forward);
     _after(const Duration(milliseconds: 2600), () => _setPhase(Phase.photo));
   }
@@ -84,6 +111,8 @@ class _OnboardingFlowState extends State<OnboardingFlow>
     for (final t in _timers) {
       t.cancel();
     }
+    _ticker.dispose();
+    _motion.dispose();
     _intro.dispose();
     _float.dispose();
     _spin.dispose();
@@ -143,7 +172,8 @@ class _OnboardingFlowState extends State<OnboardingFlow>
         _setPhase(Phase.role);
       case Phase.role:
         _setPhase(Phase.reveal);
-        _spinTo(_angleTo + 2 * math.pi, const Duration(milliseconds: 1900));
+        // Front is complete: spin and settle on the back for the rest.
+        _spinTo(_angleTo + 3 * math.pi, const Duration(milliseconds: 2100));
         _after(const Duration(milliseconds: 2900), () {
           setState(() {
             _step = StepId.intent;
@@ -160,7 +190,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
         _unfocus();
         final next = seq[i + 1];
         setState(() => _step = next);
-        _rotateToFace(back: _backSteps.contains(next));
+        _rotateToFace(back: true);
       default:
         break;
     }
@@ -183,7 +213,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
         _unfocus();
         final prev = seq[i - 1];
         setState(() => _step = prev);
-        _rotateToFace(back: _backSteps.contains(prev), dir: -1);
+        _rotateToFace(back: true, dir: -1);
       default:
         break;
     }
@@ -191,7 +221,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
 
   void _finish() {
     _setPhase(Phase.done);
-    _rotateToFace(back: false, d: const Duration(milliseconds: 1900));
+    _rotateToFace(back: true, d: const Duration(milliseconds: 1900));
     _after(const Duration(milliseconds: 2300), _openDigiLocker);
   }
 
@@ -404,32 +434,33 @@ class _OnboardingFlowState extends State<OnboardingFlow>
     final stageH = _stepsStageH(h, kb);
     final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
 
+    // Update spring targets (read by the ticker; no rebuild needed).
+    final target = _pose(h, kb);
+    _targetPose = target;
+    _sheetTarget = steps ? stageH : h + 20;
+    _top ??= _Spring(target.top);
+    _scale ??= _Spring(target.scale);
+    _opacity ??= _Spring(target.opacity);
+    _sheet ??= _Spring(h + 20);
+
     return Stack(
       children: [
         // ── Card ──
         Positioned.fill(
-          child: ShaderMask(
-            blendMode: BlendMode.dstIn,
-            shaderCallback: (r) => LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: const [Colors.transparent, Colors.black],
-              stops: [0, (24 / r.height).clamp(0.0, 1.0)],
-            ).createShader(r),
-            child: TweenAnimationBuilder<_Pose>(
-              tween: _PoseTween(end: _pose(h, kb)),
-              duration: const Duration(milliseconds: 1100),
-              curve: Curves.easeOutCubic,
-              builder: (_, p, child) => Stack(
+          child: ClipRect(
+            child: AnimatedBuilder(
+              animation: _motion,
+              child: _animatedCard(),
+              builder: (_, child) => Stack(
                 clipBehavior: Clip.none,
                 children: [
                   Positioned(
-                    top: p.top,
+                    top: _top!.x,
                     left: (w - ProfileCard.width) / 2,
                     child: Opacity(
-                      opacity: p.opacity.clamp(0.0, 1.0),
+                      opacity: _opacity!.x.clamp(0.0, 1.0),
                       child: Transform.scale(
-                        scale: p.scale,
+                        scale: _scale!.x,
                         alignment: Alignment.topCenter,
                         child: child,
                       ),
@@ -437,7 +468,6 @@ class _OnboardingFlowState extends State<OnboardingFlow>
                   ),
                 ],
               ),
-              child: _animatedCard(),
             ),
           ),
         ),
@@ -496,14 +526,19 @@ class _OnboardingFlowState extends State<OnboardingFlow>
         ),
 
         // ── Steps sheet ──
-        AnimatedPositioned(
-          duration: const Duration(milliseconds: 700),
-          curve: Curves.easeOutCubic,
+        Positioned(
           left: 0,
           right: 0,
-          top: steps ? stageH : h + 20,
-          height: steps ? h - stageH : math.max(h - stageH, 0),
-          child: _stepsSheet(),
+          top: stageH,
+          bottom: 0,
+          child: AnimatedBuilder(
+            animation: _motion,
+            child: _stepsSheet(),
+            builder: (_, child) => Transform.translate(
+              offset: Offset(0, _sheet!.x - stageH),
+              child: child,
+            ),
+          ),
         ),
       ],
     );
@@ -513,10 +548,11 @@ class _OnboardingFlowState extends State<OnboardingFlow>
         animation: Listenable.merge([_intro, _float, _spin, data]),
         builder: (_, _) {
           final it = _intro.value;
-          final popOpacity = Curves.easeOut.transform((it / 0.55).clamp(0.0, 1.0));
-          final popScale = 0.7 + 0.3 * Curves.easeOutBack.transform(it);
-          final popDy = 140 * (1 - Curves.easeOutCubic.transform(it));
-          final popTilt = 0.9 * (1 - Curves.easeOutCubic.transform(it));
+          final e = Curves.easeInOutCubic.transform(it);
+          final popOpacity = Curves.easeOut.transform((it / 0.5).clamp(0.0, 1.0));
+          final popScale = 0.82 + 0.18 * e;
+          final popDy = 120 * (1 - e);
+          final popTilt = 0.7 * (1 - e);
 
           final f = _float.value * 2 * math.pi;
           return Transform.translate(
@@ -654,11 +690,10 @@ class _OnboardingFlowState extends State<OnboardingFlow>
   // ───────────────────────── steps ─────────────────────────
   Widget _stepsSheet() => ClipRRect(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: RepaintBoundary(
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: const Color(0xE80A0A0C),
+              color: const Color(0xF50A0A0C),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
               border: Border(
                 top: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
@@ -995,27 +1030,25 @@ class _SourceTile extends StatelessWidget {
 class _Pose {
   const _Pose(this.top, this.scale, this.opacity);
   final double top, scale, opacity;
-
-  static _Pose lerp(_Pose a, _Pose b, double t) => _Pose(
-        lerpDouble(a.top, b.top, t)!,
-        lerpDouble(a.scale, b.scale, t)!,
-        lerpDouble(a.opacity, b.opacity, t)!,
-      );
-
-  @override
-  bool operator ==(Object other) =>
-      other is _Pose &&
-      (other.top - top).abs() < 0.5 &&
-      (other.scale - scale).abs() < 0.001 &&
-      (other.opacity - opacity).abs() < 0.01;
-
-  @override
-  int get hashCode => Object.hash(top.round(), (scale * 1000).round(), opacity);
 }
 
-class _PoseTween extends Tween<_Pose> {
-  _PoseTween({super.end});
+/// Critically damped spring: starts gently, never overshoots, retargetable.
+class _Spring {
+  _Spring(this.x);
+  double x;
+  double v = 0;
 
-  @override
-  _Pose lerp(double t) => _Pose.lerp(begin!, end!, t);
+  /// Returns true while still moving.
+  bool step(double target, double dt, double w, double eps) {
+    final a = w * w * (target - x) - 2 * w * v;
+    v += a * dt;
+    x += v * dt;
+    if ((target - x).abs() < eps && v.abs() < eps) {
+      final moved = x != target;
+      x = target;
+      v = 0;
+      return moved;
+    }
+    return true;
+  }
 }

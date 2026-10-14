@@ -420,7 +420,16 @@ class _ProfileCardState extends State<ProfileCard>
             const SizedBox(height: 24),
           ],
           const Spacer(),
-          Center(child: _wordmark()),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _wordmark(),
+              if (d.verified) ...[
+                const SizedBox(width: 6),
+                const Icon(Icons.verified_rounded, size: 16, color: Colors.white),
+              ],
+            ],
+          ),
         ],
       ),
     );
