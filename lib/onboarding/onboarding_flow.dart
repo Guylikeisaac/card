@@ -171,8 +171,8 @@ class _OnboardingFlowState extends State<OnboardingFlow>
         _setPhase(Phase.role);
       case Phase.role:
         _setPhase(Phase.reveal);
-        // Front is complete: spin and settle on the back for the rest.
-        _spinTo(_angleTo + 3 * math.pi, const Duration(milliseconds: 2100));
+        // Front is complete: flip once to the back, where it stays.
+        _rotateToFace(back: true, d: const Duration(milliseconds: 1400));
         _after(const Duration(milliseconds: 2900), () {
           setState(() {
             _step = StepId.intent;
@@ -189,7 +189,6 @@ class _OnboardingFlowState extends State<OnboardingFlow>
         _unfocus();
         final next = seq[i + 1];
         setState(() => _step = next);
-        _rotateToFace(back: true);
       default:
         break;
     }
@@ -206,13 +205,11 @@ class _OnboardingFlowState extends State<OnboardingFlow>
         final i = seq.indexOf(_step);
         if (i <= 0) {
           _setPhase(Phase.role);
-          _rotateToFace(back: false, dir: -1);
           return;
         }
         _unfocus();
         final prev = seq[i - 1];
         setState(() => _step = prev);
-        _rotateToFace(back: true, dir: -1);
       default:
         break;
     }
@@ -220,7 +217,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
 
   void _finish() {
     _setPhase(Phase.done);
-    _rotateToFace(back: true, d: const Duration(milliseconds: 1900));
+    _rotateToFace(back: false, d: const Duration(milliseconds: 1900));
     _after(const Duration(milliseconds: 2300), _openDigiLocker);
   }
 
