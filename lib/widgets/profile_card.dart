@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -353,8 +354,10 @@ class _ProfileCardState extends State<ProfileCard>
                   ),
                 ),
                 child: hasPhoto
-                    ? Image.file(
-                        File(d.photoPath!),
+                    ? Image(
+                        image: kIsWeb
+                            ? NetworkImage(d.photoPath!)
+                            : FileImage(File(d.photoPath!)) as ImageProvider,
                         key: ValueKey(d.photoPath),
                         width: size,
                         height: size,
