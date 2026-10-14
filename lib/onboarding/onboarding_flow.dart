@@ -271,8 +271,20 @@ class _OnboardingFlowState extends State<OnboardingFlow>
   static const _cardH = ProfileCard.height;
   static const _identityPanelH = 250.0;
 
+  /// Steps that fill a field on the (back of the) card.
+  static const _cardSteps = {
+    StepId.location,
+    StepId.level,
+    StepId.experience,
+    StepId.notice,
+  };
+
+  /// The card is only shown while the current question writes onto it.
+  bool get _cardVisible =>
+      _phase != Phase.steps || _cardSteps.contains(_step);
+
   double _stepsStageH(double h, bool kb) =>
-      kb ? 0 : (h * 0.32).clamp(150.0, 250.0);
+      kb || !_cardVisible ? 0 : (h * 0.32).clamp(150.0, 250.0);
 
   _Pose _pose(double h, bool kb) {
     final fullH = math.max(_fullH, h);
@@ -299,7 +311,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
             math.min(photoTop - 0.30 * _cardH * s, panelTop - 8 - 0.84 * _cardH * s), s, 1);
       case Phase.steps:
         final stage = _stepsStageH(h, kb);
-        if (kb) return _Pose(-_cardH * 0.5 - 40, 0.5, 0);
+        if (kb || !_cardVisible) return _Pose(-_cardH * 0.5 - 40, 0.5, 0);
         final s = ((stage - 22) / _cardH).clamp(0.25, 0.62);
         return _Pose((stage - _cardH * s) / 2 + 4, s, 1);
     }
