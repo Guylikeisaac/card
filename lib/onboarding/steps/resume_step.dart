@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/onboarding_data.dart';
@@ -48,22 +49,37 @@ class _ResumeStepState extends State<ResumeStep>
     super.dispose();
   }
 
+  static const _allowed = ['pdf', 'doc', 'docx'];
+
+  void _toast(String msg) => ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(msg)));
+
   Future<void> _pick() async {
     try {
+      // Mobile browsers grey out documents when the picker is filtered by
+      // extension, so on web open it unfiltered and validate here instead.
       final f = await FilePicker.pickFile(
-        type: FileType.custom,
-        allowedExtensions: const ['pdf', 'doc', 'docx'],
+        type: kIsWeb ? FileType.any : FileType.custom,
+        allowedExtensions: kIsWeb ? null : _allowed,
       );
       if (f == null || !mounted) return;
+      final ext = f.name.contains('.') ? f.name.split('.').last.toLowerCase() : '';
+      if (!_allowed.contains(ext)) {
+        _toast('Please choose a PDF, DOC or DOCX file');
+        return;
+      }
+      if (await f.xFile.length() > 5 * 1024 * 1024) {
+        if (!mounted) return;
+        _toast('File is larger than 5 MB');
+        return;
+      }
       widget.data.set(() {
         widget.data.resumeName = f.name;
         widget.data.resumeParsed = false;
       });
       _startParsing();
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Could not open files')));
+    } catch (e) {
+      if (mounted) _toast('Could not open files');
     }
   }
 
