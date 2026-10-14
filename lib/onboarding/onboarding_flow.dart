@@ -288,15 +288,15 @@ class _OnboardingFlowState extends State<OnboardingFlow>
         final s = ((fullH - _identityPanelH - 20) / _cardH).clamp(0.45, 0.95);
         final photoTop = math.max(8.0, (fullH - _identityPanelH - _cardH * s) / 2);
         if (_phase == Phase.photo) return _Pose(photoTop, s, 1);
-        final panelTop = h - (_phase == Phase.role ? 290 : 245);
+        final panelTop = h - (_phase == Phase.role ? 205 : 160);
         if (_phase == Phase.name) {
           // Slide up so the name line sits just above the input.
           return _Pose(
-              math.min(photoTop - 0.22 * _cardH * s, panelTop - 0.70 * _cardH * s), s, 1);
+              math.min(photoTop - 0.22 * _cardH * s, panelTop - 8 - 0.76 * _cardH * s), s, 1);
         }
         // A little further up for the dream role.
         return _Pose(
-            math.min(photoTop - 0.30 * _cardH * s, panelTop - 0.80 * _cardH * s), s, 1);
+            math.min(photoTop - 0.30 * _cardH * s, panelTop - 8 - 0.84 * _cardH * s), s, 1);
       case Phase.steps:
         final stage = _stepsStageH(h, kb);
         if (kb) return _Pose(-_cardH * 0.5 - 40, 0.5, 0);
@@ -491,7 +491,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
                     ),
                   ),
                   padding: EdgeInsets.fromLTRB(
-                      22, 36, 22, (kb ? 12 : safeBottom) + 16),
+                      22, 26, 22, (kb ? 10 : safeBottom + 16)),
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 550),
                     switchInCurve: Curves.easeOutCubic,
@@ -500,7 +500,7 @@ class _OnboardingFlowState extends State<OnboardingFlow>
                       opacity: a,
                       child: SlideTransition(
                         position: Tween(
-                                begin: const Offset(0, 0.12), end: Offset.zero)
+                                begin: const Offset(0, 0.03), end: Offset.zero)
                             .animate(a),
                         child: child,
                       ),
@@ -871,33 +871,22 @@ class _NamePanelState extends State<_NamePanel> {
   bool get _valid => widget.data.name.trim().length >= 2;
 
   @override
-  Widget build(BuildContext context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text("What's your name?", style: ST.h1),
-          const SizedBox(height: 8),
-          Text("This is how you'll appear on your SyncUp card.", style: ST.sub),
-          const SizedBox(height: 18),
-          SyncTextField(
-            controller: _c,
-            hint: 'Full name',
-            autofocus: true,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.next,
-            prefixIcon: Icons.person_outline_rounded,
-            onChanged: (v) => widget.data.set(() => widget.data.name = v),
-            onSubmitted: (_) {
-              if (_valid) widget.onNext();
-            },
-          ),
-          const SizedBox(height: 16),
-          Align(
-            alignment: Alignment.centerRight,
-            child: SyncButton(
-                label: 'Continue', enabled: _valid, onPressed: widget.onNext),
-          ),
-        ],
+  Widget build(BuildContext context) => _CompactQuestion(
+        title: "What's your name?",
+        subtitle: "This is how you'll appear on your SyncUp card.",
+        field: SyncTextField(
+          controller: _c,
+          hint: 'Full name',
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          textInputAction: TextInputAction.next,
+          prefixIcon: Icons.person_outline_rounded,
+          suffix: _NextArrow(enabled: _valid, onTap: widget.onNext),
+          onChanged: (v) => widget.data.set(() => widget.data.name = v),
+          onSubmitted: (_) {
+            if (_valid) widget.onNext();
+          },
+        ),
       );
 }
 
@@ -924,67 +913,124 @@ class _RolePanelState extends State<_RolePanel> {
   void _set(String v) => widget.data.set(() => widget.data.dreamRole = v);
 
   @override
+  Widget build(BuildContext context) => _CompactQuestion(
+        title: "What's your dream role?",
+        subtitle: "The role you're working towards — it headlines your card.",
+        field: SyncTextField(
+          controller: _c,
+          hint: 'e.g. Software Engineer',
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          textInputAction: TextInputAction.done,
+          prefixIcon: Icons.auto_awesome_outlined,
+          suffix: _NextArrow(enabled: _valid, onTap: widget.onNext),
+          onChanged: _set,
+          onSubmitted: (_) {
+            if (_valid) widget.onNext();
+          },
+        ),
+        below: SizedBox(
+          height: 34,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: kDreamRoleSuggestions.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (_, i) {
+              final r = kDreamRoleSuggestions[i];
+              final on = widget.data.dreamRole == r;
+              return GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  _c.text = r;
+                  _set(r);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: on ? Colors.white : SC.chip,
+                    borderRadius: BorderRadius.circular(17),
+                    border: Border.all(color: on ? Colors.white : SC.border),
+                  ),
+                  child: Text(r,
+                      style: ST.body.copyWith(
+                          fontSize: 13, color: on ? Colors.black : SC.text)),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+}
+
+/// Compact question used under the card for name / dream role, so the card
+/// stays the hero while the keyboard is open.
+class _CompactQuestion extends StatelessWidget {
+  const _CompactQuestion({
+    required this.title,
+    required this.subtitle,
+    required this.field,
+    this.below,
+  });
+  final String title;
+  final String subtitle;
+  final Widget field;
+  final Widget? below;
+
+  @override
   Widget build(BuildContext context) => Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("What's your dream role?", style: ST.h1),
-          const SizedBox(height: 8),
-          Text("The role you're working towards — it headlines your card.",
-              style: ST.sub),
-          const SizedBox(height: 18),
-          SyncTextField(
-            controller: _c,
-            hint: 'e.g. Software Engineer',
-            autofocus: true,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.done,
-            prefixIcon: Icons.auto_awesome_outlined,
-            onChanged: _set,
-            onSubmitted: (_) {
-              if (_valid) widget.onNext();
-            },
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 34,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: kDreamRoleSuggestions.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (_, i) {
-                final r = kDreamRoleSuggestions[i];
-                final on = widget.data.dreamRole == r;
-                return GestureDetector(
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    _c.text = r;
-                    _set(r);
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 220),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: on ? Colors.white : SC.chip,
-                      borderRadius: BorderRadius.circular(17),
-                      border: Border.all(color: on ? Colors.white : SC.border),
-                    ),
-                    child: Text(r,
-                        style: ST.body.copyWith(
-                            fontSize: 13, color: on ? Colors.black : SC.text)),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 16),
-          Align(
-            alignment: Alignment.centerRight,
-            child: SyncButton(
-                label: 'Create my card', enabled: _valid, onPressed: widget.onNext),
-          ),
+          Text(title, style: ST.h1.copyWith(fontSize: 23, letterSpacing: -0.6)),
+          const SizedBox(height: 5),
+          Text(subtitle, style: ST.sub.copyWith(fontSize: 13.5)),
+          const SizedBox(height: 14),
+          field,
+          if (below != null) ...[const SizedBox(height: 10), below!],
         ],
+      );
+}
+
+/// Round arrow inside the text field that advances to the next question.
+class _NextArrow extends StatelessWidget {
+  const _NextArrow({required this.enabled, required this.onTap});
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(right: 7),
+        child: GestureDetector(
+          key: const ValueKey('identity-next'),
+          onTap: enabled
+              ? () {
+                  HapticFeedback.lightImpact();
+                  onTap();
+                }
+              : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: enabled ? Colors.white : SC.chip,
+              boxShadow: enabled
+                  ? [
+                      BoxShadow(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        blurRadius: 16,
+                      ),
+                    ]
+                  : const [],
+            ),
+            child: Icon(Icons.arrow_forward_rounded,
+                size: 19, color: enabled ? Colors.black : SC.textFaint),
+          ),
+        ),
       );
 }
 

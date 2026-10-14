@@ -50,10 +50,13 @@ void main() {
     }
     await t.enterText(find.byType(TextField).last, 'Arjun Mehta');
     await t.pump(const Duration(milliseconds: 100));
-    await cont(t);
+    await t.tap(find.byKey(const ValueKey('identity-next')));
+    for (var i = 0; i < 20; i++) {
+      await t.pump(const Duration(milliseconds: 100));
+    }
     await t.enterText(find.byType(TextField).last, 'Software Engineer');
     await t.pump(const Duration(milliseconds: 100));
-    await t.tap(find.text('Create my card'));
+    await t.tap(find.byKey(const ValueKey('identity-next')).last);
     for (var i = 0; i < 40; i++) {
       await t.pump(const Duration(milliseconds: 100));
     }
